@@ -8,7 +8,7 @@
 		var $urls;
 		var $visitedUrls;
 		var $keyWords;
-		var $wightTable;
+		var $weightTable;
 		var $relevantPages;
 		var $currentPage;
 		var $similarityTheshold;
@@ -34,7 +34,7 @@
 
 			$this->keyWords = array();
 			$this->visetedUrls = array(); 
-			$this->wightTable = array();
+			$this->weightTable = array();
 			$this->relevantPages = array();
 			$this->possibleKeywords = array();
 			$this->tFrequency = array();
@@ -83,15 +83,53 @@
 			return $this->relevantPages;
 		}
 
-		function setWeightTable($pageCollection){
-			foreach ($pageCollection as $page) {
-				$sanitizedPage = $this->sanitizePageContents($page);
-				
-				$this->getPageTermFrequencies($page);
-				
-				$this->updateWeightTable();
-
+		function initializeWeightTable(){
+			foreach ($this->urls as $url) {
+				$this->currentPage = $url;
+				//Parse the html page
+				$page = file_get_html($url);
+				$cleanPage = $this->sanitizePageContents($page);
+				$this->getTermFrequencies($cleanPage);
 			}
+
+			$this->formatDocFrequency();
+			$this->buildWeightTable();
+		}
+
+		function formatDocFrequency(){
+			foreach ($this->tDocFrequency as $term => $docs) {
+				$this->tDocFrequency[$term] = count($docs);
+			}
+		}
+
+		// function setWeightTable($pageCollection){
+		// 	foreach ($pageCollection as $page) {
+		// 		$sanitizedPage = $this->sanitizePageContents($page);
+				
+		// 		$this->getPageTermFrequencies($page);
+				
+		// 		$this->updateWeightTable();
+
+		// 	}
+		// }
+
+		function buildWeightTable(){
+
+			foreach ($this->tFrequency as $term => $freq) {
+				$this->weightTable[$term] = $freq * $this->tDocFrequency[$term];
+			}
+
+			//Normalização dos pesos;
+			$maxWeight = max($this->weightTable);
+			foreach ($this->weightTable as $term => $weight) {
+				$this->weightTable[$term] = $this->weightTable[$term]/$maxWeight;
+			}
+
+			arsort($this->weightTable);
+			$this->weightTable = array_slice($this->weightTable, 0, 10, true);
+			debugPrint("<b>Pesos normalizados - top10:</b>");
+			debugPrint($this->weightTable);
+
 		}
 
 		function checkSimilarity($page){
@@ -103,18 +141,18 @@
 
 		function sanitizePageContents($page){
 			$trash = array(
-				'o', 'os', 'a', 'as',
+				'o', 'os', 'a', 'as', 'ao',
 				'um', 'uns', 'uma', 'umas',
 				'de', 'do', 'da', 'das',
-				'e', 'é', '',
+				'e', 'é', '', 'ou',
 				'na', 'no',
 				'por', 'para', 
-				'outro', 'todos', 'todo', 'toda', 'algum', 'alguma', 'alguns', 'algumas', 
+				'outro', 'outra', 'outros', 'outras', 'todos', 'todo', 'toda', 'algum', 'alguma', 'alguns', 'algumas', 'cada',
 				'seu', 'seus', 'sua', 'suas',
 				'sim', 'não',
 				'só', 
 				'ba', 'nov', 'dez', 
-				'como',
+				'como', 'em', 'que', 'com', 'mais', 'dia', 'se',
 
 			);
 
@@ -134,25 +172,19 @@
 				}
 			}
 			
-			// debugPrint($words);			
 			return $words;
 		}
 
 		function getTermFrequencies(array $terms){
-			$wFrequency = array();
-			$tDocFrequency = array();
 
 			foreach ($terms as $term) {
-				$wFrequency[$term] = isset($wFrequency[$term])?($wFrequency[$term] + 1):1;
-				if(!isset($tDocFrequency[$term][$this->currentPage])){
-					$tDocFrequency[$term][$this->currentPage] = $this->currentPage;
+				$this->tFrequency[$term] = isset($this->tFrequency[$term])?($this->tFrequency[$term] + 1):1;
+				if(!isset($this->tDocFrequency[$term][$this->currentPage])){
+					$this->tDocFrequency[$term][$this->currentPage] = $this->currentPage;
 				}
 			}
 			
-			arsort($wFrequency);
-			debugPrint($wFrequency);
-			debugPrint($tDocFrequency);
-			die();
+			arsort($this->tFrequency);
 		}
 
 		// function wordTable($text){
@@ -160,7 +192,6 @@
 		// 	die();
 
 		// }
-
 
 		function cosineSimilarity($tokensA, $tokensB)
 		{

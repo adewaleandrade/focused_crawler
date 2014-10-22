@@ -6,5 +6,6 @@
 	$crawler = new Crawler($topic);
 
 	debugPrint($crawler->getBaseUrlByTopic());
-	$crawler->getRelevantPages();
+	// $crawler->getRelevantPages();
+	$crawler->initializeWeightTable();
 ?>
