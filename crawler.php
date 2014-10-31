@@ -1,6 +1,17 @@
 <?php
+
+	/**
+	 * Web Crawler Focado
+	 * 
+	 * @see https://github.com/adewaleandrade/focused_crawler
+	 * @package    focused_crawler
+	 * @author     Adewale Andrade D Alcantara
+	 * @license    
+	 */
 	include('libs/simple_html_dom.php');
-	include('util.php');
+	include('libs/util.php');
+	include('libs/kohana-pt-inflector/classes/inflector.php');
+
 	set_time_limit(0);
 
 	class Crawler {
@@ -9,19 +20,25 @@
 		var $visitedUrls;
 		var $keyWords;
 		var $weightTable;
+		var $pageWeights;
 		var $relevantPages;
 		var $currentPage;
-		var $similarityTheshold;
 		var $possibleKeywords;
 		var $tFrequency;
 		var $tDocFrequency;
+
+		/**
+		 * Constructor
+		 *
+		 * @param   array userSettings		 
+		 */
 
 		function Crawler($userSettings){
 			$defaultSettings = array(
 				'topic' => '',
 				'userKeyWords' => array(),
 				'userBaseUrls' => array(),
-				'similarityTheshold' => 0.9,
+				'relevanceTheshold' => 0.7,
 				'apiUrl' => 'http://ajax.googleapis.com/ajax/services/search/web?',
 			);
 
@@ -35,10 +52,60 @@
 			$this->keyWords = array();
 			$this->visetedUrls = array(); 
 			$this->weightTable = array();
+			$this->pageWeights = array();
 			$this->relevantPages = array();
 			$this->possibleKeywords = array();
 			$this->tFrequency = array();
 			$this->tDocFrequency = array();
+		}
+
+		/**
+		 * Initializes the crawler's weight table by surfing
+		 * the base set of urls and choosing the top relevant terms.
+		 */
+		function initializeWeightTable(){
+			foreach ($this->urls as $url) {
+				$this->currentPage = $url;
+				//Parse the html page
+				$page = file_get_html($url);
+				$cleanPage = $this->sanitizePageContents($page);
+				$this->getTermFrequencies($cleanPage);
+			}
+
+			$this->formatDocFrequency();
+			$this->buildWeightTable();
+		}
+
+		/**
+		 * Formats the tDocFrequecy (Term Document Frequency)
+		 */
+		function formatDocFrequency(){
+			foreach ($this->tDocFrequency as $term => $docs) {
+				$this->tDocFrequency[$term] = count($docs);
+			}
+		}
+
+		function buildWeightTable(){
+
+			foreach ($this->tFrequency as $term => $freq) {
+				$this->weightTable[$term] = $freq * $this->tDocFrequency[$term];
+			}
+
+			//Normalização dos pesos;
+			$maxWeight = max($this->weightTable);
+			foreach ($this->weightTable as $term => $weight) {
+				$this->weightTable[$term] = $this->weightTable[$term]/$maxWeight;
+			}
+
+			arsort($this->weightTable);
+			$this->weightTable = array_slice($this->weightTable, 0, 10, true);
+			debugPrint("<b>Pesos normalizados - top10:</b>");
+			debugPrint($this->weightTable);
+			$this->expandWeightTable();
+			debugPrint("<b>Extended Weight table</b>");
+			debugPrint($this->weightTable);
+			
+
 		}
 
 		function getBaseUrlByTopic(){
@@ -62,82 +129,117 @@
 		}
 
 		function getRelevantPages(){
-			while(!empty($this->urls)){
+			while(!empty($this->urls) && (count($this->relevantPages) < 100)){
 				$this->currentPage = $this->urls[0];
-				array_pop($this->urls);
+				unset($this->urls[0]);
+				$this->urls = array_values($this->urls);
 
-				//Parse the html page
-				$page = file_get_html($this->currentPage);
-				$cleanPage = $this->sanitizePageContents($page);
-				$this->getTermFrequencies($cleanPage);
-				// $similarity = $this->checkSimilarity($page);
+				$baseUrl = getBaseUrl($this->currentPage);
 
-				// if($similarity >= $this->similarityTheshold){
-				// 	$this->relevantPages[] = $currentUrl;
-				// }else{
-				// 	//tratar páginas n similares
-				// }
+				if(!in_array($this->currentPage, $this->visetedUrls) && ($this->currentPage != '')){
+					//Parse the html page
+					$page = file_get_html2($this->currentPage);
+					if($page){
 
+						$relevance =  $this->calculatePageRelevance($page);
+						// debugPrint($this->currentPage.' => '. $relevance);
+						
+						if($relevance >= $this->settings['relevanceTheshold']){
+							$this->relevantPages[$baseUrl][$this->currentPage] = $relevance;
+							//Pega os links dentro da página
+							$pageLinks = $page->find('a');
+							foreach ($pageLinks as $link) {
+								$normalizedUrl = normalizeUrl($this->currentPage, $link->href);
+								$this->urls[] = $normalizedUrl;
+							}
+						}
+						
+						$this->visitedUrls[] = $this->currentPage;
+						$rP =0;
+						foreach ($this->relevantPages as $subPages) {
+							$rP += count($subPages);
+							# code...
+						}
+						// count($this->relevantPages);
+						$vP = count($this->visitedUrls);
+						$ratio = $vP?$rP/$vP:0;
+						debugPrint("Relevant Pages: <b>".$rP."</b> / Visited : <b>".$vP."</b> / Ratio:".$ratio);
+						sleep(2);
+					}
+				}
 			}
-
+			arsort($this->relevantPages);
 			return $this->relevantPages;
 		}
 
-		function initializeWeightTable(){
-			foreach ($this->urls as $url) {
-				$this->currentPage = $url;
-				//Parse the html page
-				$page = file_get_html($url);
-				$cleanPage = $this->sanitizePageContents($page);
-				$this->getTermFrequencies($cleanPage);
-			}
+		/**
+		 * Makes a plural word singular.
+		 *
+		 *     echo Inflector::singular('gatos'); // "gato"
+		 *     echo Inflector::singular('appendix'); // "appendix", uncountable
+		 *
+		 * You can also provide the count to make inflection more intelligent.
+		 * In this case, it will only return the singular value if the count is
+		 * greater than one and not zero.
+		 *
+		 *     echo Inflector::singular('gatos', 2); // "gatos"
+		 *
+		 * [!!] Special inflections are defined in `config/inflector.php`.
+		 *
+		 * @param   string   word to singularize
+		 * @param   integer  count of thing
+		 * @return  string
+		 * @uses    Inflector::uncountable
+		 */
+		function calculatePageRelevance($page){
 
-			$this->formatDocFrequency();
-			$this->buildWeightTable();
+			if($page){
+				$this->pageWeights = array();
+
+				$pageTitle = $page->find('title');
+				$this->getSectionWeights($pageTitle, 2);
+
+				$pageBody= $page->find('body');
+				$this->getSectionWeights($pageBody);
+
+				return $this->cosineSimilarity();
+
+			}else{
+				return null;
+			}
 		}
 
-		function formatDocFrequency(){
-			foreach ($this->tDocFrequency as $term => $docs) {
-				$this->tDocFrequency[$term] = count($docs);
+		/**
+		 * Makes a plural word singular.
+		 *
+		 *     echo Inflector::singular('gatos'); // "gato"
+		 *     echo Inflector::singular('appendix'); // "appendix", uncountable
+		 *
+		 * You can also provide the count to make inflection more intelligent.
+		 * In this case, it will only return the singular value if the count is
+		 * greater than one and not zero.
+		 *
+		 *     echo Inflector::singular('gatos', 2); // "gatos"
+		 *
+		 * [!!] Special inflections are defined in `config/inflector.php`.
+		 *
+		 * @param   string   word to singularize
+		 * @param   integer  count of thing
+		 * @return  string
+		 * @uses    Inflector::uncountable
+		 */
+		function getSectionWeights($sections, $baseScore = 1){
+			foreach ($sections as $section) {
+				$cleanSectionTerms = $this->sanitizePageContents($section);
+
+				$keyTerms = array_keys($this->weightTable);
+				foreach ($cleanSectionTerms as $term) {
+					if(in_array($term, $keyTerms)){
+						$this->pageWeights[$term] = isset($this->pageWeights[$term])?($this->pageWeights[$term] + $baseScore) : $baseScore;
+					}
+				}
 			}
 		}
-
-		// function setWeightTable($pageCollection){
-		// 	foreach ($pageCollection as $page) {
-		// 		$sanitizedPage = $this->sanitizePageContents($page);
-				
-		// 		$this->getPageTermFrequencies($page);
-				
-		// 		$this->updateWeightTable();
-
-		// 	}
-		// }
-
-		function buildWeightTable(){
-
-			foreach ($this->tFrequency as $term => $freq) {
-				$this->weightTable[$term] = $freq * $this->tDocFrequency[$term];
-			}
-
-			//Normalização dos pesos;
-			$maxWeight = max($this->weightTable);
-			foreach ($this->weightTable as $term => $weight) {
-				$this->weightTable[$term] = $this->weightTable[$term]/$maxWeight;
-			}
-
-			arsort($this->weightTable);
-			$this->weightTable = array_slice($this->weightTable, 0, 10, true);
-			debugPrint("<b>Pesos normalizados - top10:</b>");
-			debugPrint($this->weightTable);
-
-		}
-
-		function checkSimilarity($page){
-
-
-
-		}
-
 
 		function sanitizePageContents($page){
 			$trash = array(
@@ -153,6 +255,7 @@
 				'só', 
 				'ba', 'nov', 'dez', 
 				'como', 'em', 'que', 'com', 'mais', 'dia', 'se',
+				'nbsp', 'ã©',
 
 			);
 
@@ -187,30 +290,42 @@
 			arsort($this->tFrequency);
 		}
 
-		// function wordTable($text){
-		// 	print_r($text);
-		// 	die();
-
-		// }
-
-		function cosineSimilarity($tokensA, $tokensB)
+		function cosineSimilarity()
 		{
-		    $a = $b = $c = 0;
-		    $uniqueTokensA = $uniqueTokensB = array();
+			$a = $b = $c = 0;
+			foreach ($this->pageWeights as $term => $w) {
+				$a += $w * $this->weightTable[$term];
+				$b += $w * $w;
+			}
+			foreach ($this->weightTable as $w) {
+				$c += $w * $w;
+			}
 
-		    $uniqueMergedTokens = array_unique(array_merge($tokensA, $tokensB));
-
-		    foreach ($tokensA as $token) $uniqueTokensA[$token] = 0;
-		    foreach ($tokensB as $token) $uniqueTokensB[$token] = 0;
-
-		    foreach ($uniqueMergedTokens as $token) {
-		        $x = isset($uniqueTokensA[$token]) ? 1 : 0;
-		        $y = isset($uniqueTokensB[$token]) ? 1 : 0;
-		        $a += $x * $y;
-		        $b += $x;
-		        $c += $y;
-		    }
 		    return $b * $c != 0 ? $a / sqrt($b * $c) : 0;
+		}
+
+		function expandWeightTable (){
+			$keyWords = array_keys($this->weightTable);
+			$extendedTable = array();
+
+			foreach ($keyWords as $w) {
+				$word = cleanWord($w);
+				$sWord = Inflector::singular($word);
+				$searchUrl =  'http://www.dicio.com.br/'.$sWord;
+				$page = file_get_html2($searchUrl);
+
+				if($page) {
+					// debugPrint($page->plaintext);
+					$sin = $page->find("p.sinonimos a");
+
+					foreach ($sin as $s) {
+						$extendedTable[$s->plaintext] = $this->weightTable[$w];
+					}
+				}
+			}
+			
+			$this->weightTable = array_merge($this->weightTable, $extendedTable);
+			arsort($this->weightTable);
 		}
 	}
 ?>
