@@ -38,7 +38,8 @@
 				'topic' => '',
 				'userKeyWords' => array(),
 				'userBaseUrls' => array(),
-				'relevanceTheshold' => 0.7,
+				'relevanceTheshold' => 0.5,
+				'subPageLimit' => 10,
 				'apiUrl' => 'http://ajax.googleapis.com/ajax/services/search/web?',
 			);
 
@@ -67,7 +68,7 @@
 			foreach ($this->urls as $url) {
 				$this->currentPage = $url;
 				//Parse the html page
-				$page = file_get_html($url);
+				$page = file_get_html2($url);
 				$cleanPage = $this->sanitizePageContents($page);
 				$this->getTermFrequencies($cleanPage);
 			}
@@ -136,6 +137,7 @@
 
 				$baseUrl = getBaseUrl($this->currentPage);
 
+				// debugPrint('Relevance Threshold => '. $this->settings['relevanceTheshold']);
 				if(!in_array($this->currentPage, $this->visetedUrls) && ($this->currentPage != '')){
 					//Parse the html page
 					$page = file_get_html2($this->currentPage);
@@ -144,26 +146,28 @@
 						$relevance =  $this->calculatePageRelevance($page);
 						// debugPrint($this->currentPage.' => '. $relevance);
 						
-						if($relevance >= $this->settings['relevanceTheshold']){
-							$this->relevantPages[$baseUrl][$this->currentPage] = $relevance;
-							//Pega os links dentro da página
-							$pageLinks = $page->find('a');
-							foreach ($pageLinks as $link) {
-								$normalizedUrl = normalizeUrl($this->currentPage, $link->href);
-								$this->urls[] = $normalizedUrl;
+						if($relevance >= $this->settings['relevanceTheshold']){							
+							if(count($this->relevantPages[$baseUrl]) < $this->settings['subPageLimit']){
+								$this->relevantPages[$baseUrl][$this->currentPage] = $relevance;	
 							}
+							
+						}
+						//Pega os links dentro da página
+						$pageLinks = $page->find('a');
+						foreach ($pageLinks as $link) {
+							$normalizedUrl = normalizeUrl($this->currentPage, $link->href);
+							$this->urls[] = $normalizedUrl;
 						}
 						
 						$this->visitedUrls[] = $this->currentPage;
 						$rP =0;
 						foreach ($this->relevantPages as $subPages) {
 							$rP += count($subPages);
-							# code...
 						}
-						// count($this->relevantPages);
+						$dP =  count($this->relevantPages);
 						$vP = count($this->visitedUrls);
 						$ratio = $vP?$rP/$vP:0;
-						debugPrint("Relevant Pages: <b>".$rP."</b> / Visited : <b>".$vP."</b> / Ratio:".$ratio);
+						debugPrint("Relevant Pages: <b>".$rP." Different Pages: <b> ".$dP."</b> / Visited : <b>".$vP."</b> / Ratio:".$ratio);
 						sleep(2);
 					}
 				}
@@ -201,6 +205,8 @@
 
 				$pageBody= $page->find('body');
 				$this->getSectionWeights($pageBody);
+
+				// debugPrint($this->pageWeights);
 
 				return $this->cosineSimilarity();
 
@@ -245,7 +251,7 @@
 			$trash = array(
 				'o', 'os', 'a', 'as', 'ao',
 				'um', 'uns', 'uma', 'umas',
-				'de', 'do', 'da', 'das',
+				'de', 'do', 'da', 'das', 'dos',
 				'e', 'é', '', 'ou',
 				'na', 'no',
 				'por', 'para', 
@@ -255,7 +261,7 @@
 				'só', 
 				'ba', 'nov', 'dez', 
 				'como', 'em', 'que', 'com', 'mais', 'dia', 'se',
-				'nbsp', 'ã©',
+				'nbsp', 'ã©', 'eacute', 'agraves', 'r', 
 
 			);
 
