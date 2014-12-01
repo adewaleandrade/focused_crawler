@@ -1,9 +1,9 @@
 <?php
 	include('crawler.php');
 	include('FocusedCrawler.php');
-
+	// phpinfo();die();
 	$topic = "Shows, eventos, lazer, festas na bahia";
-	echo stem_english('apartamento');die();
+	echo stem_portuguese("quilométricas");die();
 	$crawler = new FocusedCrawler($topic);
 
 
