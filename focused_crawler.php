@@ -1,7 +1,7 @@
 <?php
 	include('crawler.php');
 	include('FocusedCrawler.php');
-	// phpinfo();die();
+	phpinfo();
 	$topic = "Shows, eventos, lazer, festas na bahia";
 	echo stem_portuguese("quilométricas");die();
 	$crawler = new FocusedCrawler($topic);
