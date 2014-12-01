@@ -17,6 +17,8 @@
 
 		public $terms;
 		public $crawler;
+		public $stemmedDictionary;
+		public $generalTermFrequencies;
 		public $termFrequencies;
 		public $tDocFrequencies;
 		public $keyWords;
@@ -33,9 +35,11 @@
 		function WeightTable(FocusedCrawler &$crawler){
 			$this->crawler = $crawler;
 			$this->generalTermFrequencies = array();
+			$this->stemmedDictionary = array();
 			$this->tDocFrequencies = array();
 			$this->keyWords = array();
 			$this->seedDocuments = array();
+
 
 			foreach ($this->crawler->urls as $url) {
 				$this->seedDocuments[] = new Document($url, $this->crawler, 1);
@@ -117,6 +121,17 @@
 			
 			$this->keyWords = array_merge($this->keyWords, $extendedTable);
 			arsort($this->keyWords);
+		}
+
+
+		function updateDictionary (array $documentDicionary){
+			foreach ($documentDicionary as $stemmedWord => $originalWords) {
+				if(isset($this->stemmedDictionary[$stemmedWord])){
+					$this->stemmedDictionary[$stemmedWord] = $this->stemmedDictionary[$stemmedWord] + $originalWords;
+				}else{
+					$this->stemmedDictionary[$stemmedWord] = $originalWords;
+				}
+			}
 		}
 
 	}

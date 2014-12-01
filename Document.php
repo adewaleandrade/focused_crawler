@@ -18,6 +18,7 @@
 	class Document {
 
 		public $termFrequencies;
+		public $stemmedDictionary;
 		public $keyTermsWeights;
 		public $url;
 		public $pageUrls;
@@ -34,6 +35,7 @@
 		function Document($url, FocusedCrawler &$crawler, $isSeed = 0 ){
 			$this->url = $url;
 			$this->termFrequencies = array();
+			$this->stemmedDictionary = array();
 			$this->keyTermsWeights = array();
 			$this->pageUrls = array();
 			// $this->wieghtTable = $weightTable;
@@ -46,6 +48,7 @@
 				if($isSeed){
 					$cleanPage = $this->sanitizePageContents($page);
 					$this->getTermFrequencies($cleanPage);
+
 				}else{
 					$pageTitle = $page->find('title');
 					$this->getSectionWeights($pageTitle, 2);
@@ -60,6 +63,9 @@
 						$this->pageUrls[] = $normalizedUrl;
 					}
 				}
+
+				//Update the weight table's dictionary
+				$this->weightTable->updateDictionary($this->stemmedDictionary);
 			} else return false;
 		}
 
@@ -92,26 +98,31 @@
 			$text = preg_replace('/[^a-zA-ZãÃáàâõóòôêéèíìúùç ]/s', '', $text);
 			
 			$text = strtolower($text);
-			$words = explode(' ', $text);		
+			$words = explode(' ', $text);
+			$stemmedWords = array();		
 
 			//Remove palavras desnecessárias
 			foreach ($words as $k => $v) {
 				if (in_array($v, $stopWords)) {
 					unset($words[$k]);
+				}else{
+					$sWord = stem_portuguese($v);
+					$stemmedWords[$sWord][$v] = $v;
 				}
 			}
-			
-			return $words;
+			$this->stemmedDictionary = $stemmedWords;
+
+			return $stemmedWords;
 		}
 
 
 		function getTermFrequencies(array $terms){
 
-			foreach ($terms as $term) {
-				$this->termFrequencies[$term] = isset($this->termFrequencies[$term])?($this->termFrequencies[$term] + 1):1;
+			foreach ($terms as $stemmedTerm => $originalTerms) {
+				$this->termFrequencies[$stemmedTerm] = isset($this->termFrequencies[$stemmedTerm])?($this->termFrequencies[$stemmedTerm] + 1):1;
 
-				if(!isset($this->crawler->weightTable->tDocFrequencies[$term]['urls'][$this->url])){
-					$this->crawler->weightTable->tDocFrequencies[$term]['urls'][$this->url] = $this->url;
+				if(!isset($this->crawler->weightTable->tDocFrequencies[$stemmedTerm]['urls'][$this->url])){
+					$this->crawler->weightTable->tDocFrequencies[$stemmedTerm]['urls'][$this->url] = $this->url;
 				}
 			}
 			
