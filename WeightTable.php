@@ -15,13 +15,14 @@
 
 	class WeightTable {
 
-		public $terms;
-		public $crawler;
+		private $crawler;
 		public $stemmedDictionary;
-		public $generalTermFrequencies;
 		public $termFrequencies;
 		public $tDocFrequencies;
+		public $documentCount;
 		public $keyWords;
+		public $extendedKeyWords;
+		public $stemmedKeyWords;
 		public $seedDocuments;
 
 		/**
@@ -34,31 +35,30 @@
 		 */
 		function WeightTable(FocusedCrawler &$crawler){
 			$this->crawler = $crawler;
-			$this->generalTermFrequencies = array();
+			$this->termFrequencies = array();
 			$this->stemmedDictionary = array();
 			$this->tDocFrequencies = array();
 			$this->keyWords = array();
+			$this->extendedKeyWords = array();
+			$this->stemmedKeyWords = array();
 			$this->seedDocuments = array();
-
+			$this->documentCount = 0;
 
 			foreach ($this->crawler->urls as $url) {
-				$this->seedDocuments[] = new Document($url, $this->crawler, 1);
+				$this->seedDocuments[] = new Document($url['url'], $this->crawler, $this,0 , 1);
 			}
-			
-			$this->buildWeightTable();
-			// debugPrint($this->tDocFrequencies);die();
+			// debugPrint($this->seedDocuments); die();
+			$this->updateKeyWords();
 		}
 
 
-		function buildWeightTable(){
-			$this->getGeneralTermFrequencies();
-			$this->formatDocFrequency();
-
+		function updateKeyWords(){
+			$this->keyWords = array();
 			// Gets the tf-idf weight for each term on the seed documents pool
 			foreach ($this->termFrequencies as $term => $freq) {
-				$this->keyWords[$term] = $freq * (count($this->seedDocuments) / $this->tDocFrequencies[$term]['count']);
+				$this->keyWords[$term] = $freq * ($this->documentCount / $this->tDocFrequencies[$term]['count']);
 			}
-
+			
 			// Weight Normalization
 			$maxWeight = max($this->keyWords);
 			foreach ($this->keyWords as $term => $weight) {
@@ -66,39 +66,31 @@
 			}
 
 			arsort($this->keyWords);
+			// debugPrint($this->keyWords);
 
 			// gets the top N terms relevant to the topic
-			$this->keyWords = array_slice($this->keyWords, 0, $this->crawler->settings['weightTableTopTermsCount'], true);
+			$this->keyWords = array_slice($this->keyWords, 0, $this->crawler->settings['weightTableMaxSize'], true);
 
-			debugPrint("<b>Pesos normalizados - top10:</b>");
-			debugPrint($this->keyWords);
-
-			$this->expandWeightTable();
-			debugPrint("<b>Extended Weight table</b>");
-			debugPrint($this->keyWords);
+			$this->expandKeyWords();
+			$this->updateStemmedKeyWords();
+			// debugPrint("<b>Pesos normalizados - top10:(".count($this->keyWords).")</b>");
+			// debugPrint($this->keyWords);
+			
+			// debugPrint("<b>Extended Weight table (".count($this->extendedKeyWords).")</b>");
+			// debugPrint($this->extendedKeyWords);
+			
+			// debugPrint("<b>Stemmed Weight table (".count($this->stemmedKeyWords).")</b>");
+			// debugPrint($this->stemmedKeyWords);
 		}
 
-
-		function getGeneralTermFrequencies(){
-			foreach ($this->seedDocuments as $document) {
-				foreach ($document->termFrequencies as $term => $freq) {					
-					$this->termFrequencies[$term] = isset($this->termFrequencies[$term]) ? $this->termFrequencies[$term] + $freq : $freq;
-					$this->tDocFrequencies[$term]['urls'][$document->url] = $document->url;
-				}
+		function updateStemmedKeyWords(){
+			$this->stemmedKeyWords = array();
+			foreach ($this->extendedKeyWords as $word => $weight) {
+				$this->stemmedKeyWords[stem_portuguese($word)] = $weight;
 			}
 		}
 
-		/**
-		 * Formats the tDocFrequecy (Term Document Frequency)
-		 */
-		function formatDocFrequency(){
-			foreach ($this->tDocFrequencies as $term => $info) {
-				$this->tDocFrequencies[$term]['count'] = count($info['urls']);
-			}
-		}
-
-
-		function expandWeightTable (){
+		function expandKeyWords (){
 			$keyWords = array_keys($this->keyWords);
 			$extendedTable = array();
 
@@ -110,7 +102,6 @@
 				$page = file_get_html2($searchUrl);
 
 				if($page) {
-					// debugPrint($page->plaintext);
 					$sin = $page->find("p.sinonimos a");
 
 					foreach ($sin as $s) {
@@ -119,19 +110,8 @@
 				}
 			}
 			
-			$this->keyWords = array_merge($this->keyWords, $extendedTable);
-			arsort($this->keyWords);
-		}
-
-
-		function updateDictionary (array $documentDicionary){
-			foreach ($documentDicionary as $stemmedWord => $originalWords) {
-				if(isset($this->stemmedDictionary[$stemmedWord])){
-					$this->stemmedDictionary[$stemmedWord] = $this->stemmedDictionary[$stemmedWord] + $originalWords;
-				}else{
-					$this->stemmedDictionary[$stemmedWord] = $originalWords;
-				}
-			}
+			$this->extendedKeyWords = array_merge($this->keyWords, $extendedTable);
+			arsort($this->extendedKeyWords);
 		}
 
 	}

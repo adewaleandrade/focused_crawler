@@ -17,13 +17,14 @@
 
 	class Document {
 
-		public $termFrequencies;
-		public $stemmedDictionary;
+		public $terms;
+		public $stemmedFrequencies;
 		public $keyTermsWeights;
 		public $url;
 		public $pageUrls;
-		// private $wieghtTable;
-		private $crawler;
+		public $crawler;
+		private $weightTable;
+		public $irrelevantDrillLevel;
 
 		/**
 		 * Constructor
@@ -32,22 +33,23 @@
 		 * @param   FocusedCrawler crawler	
 		 * @param   int isSeed		 
 		 */
-		function Document($url, FocusedCrawler &$crawler, $isSeed = 0 ){
+		function Document($url, FocusedCrawler &$crawler, WeightTable &$weightTable, $irrelevantDrillLevel = 0, $isSeed = 0 ){
 			$this->url = $url;
-			$this->termFrequencies = array();
+			$this->terms = array();
 			$this->stemmedDictionary = array();
 			$this->keyTermsWeights = array();
 			$this->pageUrls = array();
-			// $this->wieghtTable = $weightTable;
 			$this->crawler = $crawler;
+			$this->weightTable = $weightTable;
+			$this->irrelevantDrillLevel = $irrelevantDrillLevel;
 
 			//Download and Parse page
 			$page = file_get_html2($url);
 
 			if($page){
 				if($isSeed){
-					$cleanPage = $this->sanitizePageContents($page);
-					$this->getTermFrequencies($cleanPage);
+					$this->terms = $this->sanitizePageContents($page);
+					$this->getTermFrequencies();
 
 				}else{
 					$pageTitle = $page->find('title');
@@ -58,79 +60,74 @@
 
 					//Pega os links dentro da página
 					$pageLinks = $page->find('a');
-					foreach ($pageLinks as $link) {
-						$normalizedUrl = normalizeUrl($this->url, $link->href);
-						$this->pageUrls[] = $normalizedUrl;
-					}
+					$this->rankPageLinks($pageLinks);
 				}
 
-				//Update the weight table's dictionary
-				$this->weightTable->updateDictionary($this->stemmedDictionary);
+				$this->weightTable->documentCount += 1;
+				// $this->weightTable->updateDictionary($this->stemmedDictionary);
 			} else return false;
 		}
 
 		function sanitizePageContents($page){
+			$text = $page->plaintext;
+			// $text =  utf8_decode(strip_tags(htmlentities($page->plaintext,null,"UTF-8")));
+			// $text = htmlspecialchars($page->plaintext, ENT_QUOTES, "UTF-8");
+
 			$stopWords = array(
-				'de', 'a', 'o', 'que', 'e', 'do', 'da', 'em', 'um', 'para', 'é', 'com','não', 'uma', 'os', 'no',
-				'se', 'na', 'por', 'mais', 'as', 'dos', 'como', 'mas', 'foi', 'ao', 'ele', 'das', 'tem', 'à', 'seu',
-				'sua', 'ou', 'ser', 'quando', 'muito', 'há', 'nos', 'já', 'está', 'eu', 'também', 'só', 'pelo', 'pela', 'até', 
-				'isso', 'ela', 'entre', 'era', 'depois', 'sem', 'mesmo', 'aos', 'ter', 'seus', 'quem', 'nas', 'me', 'esse', 'eles', 'estão',
-				'você', 'tinha', 'foram', 'essa', 'num', 'nem', 'suas', 'meu', 'às', 'minha', 'têm', 'numa', 'pelos', 'elas', 'havia', 'seja',
-				'qual', 'será', 'nós', 'tenho', 'lhe', 'deles', 'essas', 'esses', 'pelas', 'este', 'fosse', 'dele', 'tu', 'te', 'vocês', 'vos', 'lhes',
+				'de', 'a', 'o', 'que', 'e', 'do', 'da', 'em', 'um', 'para', 'é', '&eacute;', 'com','não', 'n&atilde;o', 'uma', 'os', 'no',
+				'se', 'na', 'por', 'mais', 'as', 'dos', 'como', 'mas', 'foi', 'ao', 'ele', 'das', 'tem', 'à', '&agrave;', 'seu',
+				'sua', 'ou', 'ser', 'quando', 'muito', 'há', 'h&aacute;', 'nos', 'já','j&aacute;', 'está', 'est&aacute;', 'eu', 'também', 'tamb&eacute;m', 'só', 's&oacute;', 'pelo', 'pela', 'até', 
+				'isso', 'ela', 'entre', 'era', 'depois', 'sem', 'mesmo', 'aos', 'ter', 'seus', 'quem', 'nas', 'me', 'esse', 'eles', 'estão', 'est&atilde;o',
+				'você', 'voc&ecirc;', 'tinha', 'foram', 'essa', 'num', 'nem', 'suas', 'meu', 'às', '&agrave;s', 'minha', 'têm', 't&ecirc;m', 'numa', 'pelos', 'elas', 'havia', 'seja',
+				'qual', 'será', 'ser&aacute;', 'nós', 'n&oacute;s', 'tenho', 'lhe', 'deles', 'essas', 'esses', 'pelas', 'este', 'fosse', 'dele', 'tu', 'te', 'vocês', 'voc&ecirc;s', 'vos', 'lhes',
 				'meus', 'minhas', 'teu', 'tua', 'teus', 'tuas', 'nosso', 'nossa', 'nossos', 'nossas', 'dela', 'delas', 'esta', 'estes', 'estas', 'aquele',
 				'aquela', 'aqueles', 'aquelas', 'isto', 'aquilo', 'estou', 'está', 'estamos', 'estão', 'estive', 'esteve', 'estivemos', 'estiveram',
-				'estava', 'estávamos', 'estavam', 'estivera', 'estivéramos', 'esteja', 'estejamos', 'estejam', 'estivesse', 'estivéssemos', 'estivessem',
-				'estiver', 'estivermos', 'estiverem', 'hei', 'há', 'havemos', 'hão', 'houve', 'houvemos', 'houveram', 'houvera', 'houvéramos', 
-				'haja', 'hajamos', 'hajam', 'houvesse', 'houvéssemos', 'houvessem', 'houver', 'houvermos', 'houverem', 'houverei', 'houverá', 'houveremos',
-				'houverão', 'houveria', 'houveríamos', 'houveriam', 'sou', 'somos', 'são', 'era', 'éramos', 'eram', 'fui', 'foi', 'fomos',
-				'foram', 'fora', 'fôramos', 'seja', 'sejamos', 'sejam', 'fosse', 'fôssemos', 'fossem', 'for', 'formos', 'forem', 'serei',
-				'será', 'seremos', 'serão', 'seria', 'seríamos', 'seriam', 'tenho', 'tem', 'temos', 'tém', 'tinha', 'tínhamos', 'tinham', 'tive',
-				'teve', 'tivemos', 'tiveram', 'tivera', 'tivéramos', 'tenha', 'tenhamos', 'tenham', 'tivesse', 'tivéssemos', 'tivessem', 'tiver', 
-				'tivermos', 'tiverem', 'terei', 'terá', 'teremos', 'terão', 'teria', 'teríamos', 'teriam', 
-				'ba', 'nov', 'dez', 'dia',
-				'nbsp', 'ã©', 'eacute', 'agraves', 'r'
+				'estava', 'estávamos', 'est&aacute;vamos', 'estavam', 'estivera', 'estivéramos', 'estiv&eacute;ramos', 'esteja', 'estejamos', 'estejam', 'estivesse', 'estivéssemos', 'estiv&eacute;ssemos', 'estivessem',
+				'estiver', 'estivermos', 'estiverem', 'hei', 'há', 'h&aacute;', 'havemos', 'hão', 'h&atilde;o', 'houve', 'houvemos', 'houveram', 'houvera', 'houvéramos', 'houv&eacute;ramos', 
+				'haja', 'hajamos', 'hajam', 'houvesse', 'houvéssemos', 'houv&eacute;ssemos', 'houvessem', 'houver', 'houvermos', 'houverem', 'houverei', 'houverá', 'houver&aacute;', 'houveremos',
+				'houverão', 'houver&atilde;o', 'houveria', 'houveríamos', 'houver&iacute;amos', 'houveriam', 'sou', 'somos', 'são', 's&atilde;o', 'era', 'éramos', '&eacute;ramos', 'eram', 'fui', 'foi', 'fomos',
+				'foram', 'fora', 'fôramos', 'seja', 'sejamos', 'sejam', 'fosse', 'fôssemos', 'f&ocirc;ssemos', 'fossem', 'for', 'formos', 'forem', 'serei',
+				'será', 'ser&aacute;', 'seremos', 'serão', 'ser&atilde;o', 'seria', 'seríamos', 'ser&iacute;amos', 'seriam', 'tenho', 'tem', 'temos', 'tém', 't&eacute;m', 'tinha', 'tínhamos', 't&iacute;nhamos', 'tinham', 'tive',
+				'teve', 'tivemos', 'tiveram', 'tivera', 'tivéramos', 'tiv&eacute;ramos', 'tenha', 'tenhamos', 'tenham', 'tivesse', 'tivéssemos', 'tiv&eacute;ssemos', 'tivessem', 'tiver', 
+				'tivermos', 'tiverem', 'terei', 'terá', 'ter&aacute;', 'teremos', 'terão', 'ter&atilde;o', 'teria', 'teríamos', 'ter&iacute;amos', 'teriam', 
+				'ba', 'nov', 'dez', 'dia', 'ax','possui', 'possuem', 'outros', 'outro', 'todo', 'todos', 'toda', 'todas', 'onde',
+				'&nbsp;', 'ã©', 'eacute', 'agraves', 'r', '&bull;', 'moi', '©', '&;'
 			);
 
-			$text = $page->plaintext;
-
-			//Remove caracteres especiais e numeros
+			// //Remove caracteres especiais e numeros
 			$text = preg_replace('/[0-9]h/s', '', $text);
-			$text = preg_replace('/[^a-zA-ZãÃáàâõóòôêéèíìúùç ]/s', '', $text);
+			$text = preg_replace('/[^a-zA-ZãÃáàâõóòôêéèíìúùç&;\- ]/s', '', $text);
 			
-			$text = strtolower($text);
-			$words = explode(' ', $text);
-			$stemmedWords = array();		
+			$text =strtolower($text);
+			$bagOfWords = explode(' ', $text);
 
-			//Remove palavras desnecessárias
-			foreach ($words as $k => $v) {
-				if (in_array($v, $stopWords)) {
-					unset($words[$k]);
-				}else{
-					$sWord = stem_portuguese($v);
-					$stemmedWords[$sWord][$v] = $v;
+			// Remove palavras desnecessárias
+			foreach ($bagOfWords as $k => $w) {
+				if (in_array($w, $stopWords) || (strlen($w) <= 1)) {
+					unset($bagOfWords[$k]);
 				}
 			}
-			$this->stemmedDictionary = $stemmedWords;
 
-			return $stemmedWords;
+			return array_values($bagOfWords);
 		}
 
 
-		function getTermFrequencies(array $terms){
-
-			foreach ($terms as $stemmedTerm => $originalTerms) {
-				$this->termFrequencies[$stemmedTerm] = isset($this->termFrequencies[$stemmedTerm])?($this->termFrequencies[$stemmedTerm] + 1):1;
-
-				if(!isset($this->crawler->weightTable->tDocFrequencies[$stemmedTerm]['urls'][$this->url])){
-					$this->crawler->weightTable->tDocFrequencies[$stemmedTerm]['urls'][$this->url] = $this->url;
-				}
+		function getTermFrequencies(){
+			foreach ($this->terms as $term) {
+				$this->computeFrequencies($term);
 			}
-			
-			arsort($this->termFrequencies);
+		}
+
+		function computeFrequencies ($term){
+			$this->weightTable->termFrequencies[$term] = isset($this->weightTable->termFrequencies[$term])?($this->weightTable->termFrequencies[$term] + 1):1;
+			// debugPrint($term .'=>'.$this->weightTable->termFrequencies[$term]);
+			if(!isset($this->weightTable->tDocFrequencies[$term]['urls'][$this->url])){
+				$this->weightTable->tDocFrequencies[$term]['urls'][$this->url] = $this->url;
+				$this->weightTable->tDocFrequencies[$term]['count'] = isset($this->weightTable->tDocFrequencies[$term]['count'])?$this->weightTable->tDocFrequencies[$term]['count'] + 1:1;
+			}
 		}
 
 		
-
 		/**
 		 * 
 		 *
@@ -142,27 +139,58 @@
 		function getSectionWeights($sections, $baseScore = 1){
 			foreach ($sections as $section) {
 				$cleanSectionTerms = $this->sanitizePageContents($section);
+				$stemmedKeyTerms = array_keys($this->weightTable->stemmedKeyWords);
 
-				$keyTerms = array_keys($this->weightTable->keyWords);
 				foreach ($cleanSectionTerms as $term) {
-					//compute term frequencies
-					$this->termFrequencies[$term] = isset($this->termFrequencies[$term])?($this->termFrequencies[$term] + 1):1;
+					$this->terms[] = $term;
 
-					if(!isset($this->crawler->weightTable->tDocFrequencies[$term]['urls'][$this->url])){
-						$this->crawler->weightTable->tDocFrequencies[$term]['urls'][$this->url] = $this->url;
-					}
-
+					$stemmedDocTerm = stem_portuguese($term);
 					// Get section weight for key words
-					if(in_array($term, $keyTerms)){
-						$this->keyTermsWeights[$term] = isset($this->keyTermsWeights[$term])?($this->keyTermsWeights[$term] + $baseScore) : $baseScore;
+					if(in_array($stemmedDocTerm, $stemmedKeyTerms)){
+						$this->keyTermsWeights[$stemmedDocTerm] = isset($this->keyTermsWeights[$stemmedDocTerm])?($this->keyTermsWeights[$stemmedDocTerm] + $baseScore) : $baseScore;
 					}
 				}
 			}
 		}
 
-		
+		function rankPageLinks($links){
+			foreach ($links as $link) {
+				$normalizedUrl = normalizeUrl($this->url, $link->href);
+				$linkScore = $this->getStringScore($normalizedUrl) + $this->getStringScore($link->plaintext) + $this->getRelevantReferenceScore($normalizedUrl);
+				$this->pageUrls[$normalizedUrl] = $linkScore;
+			}
 
-		
+			arsort($this->pageUrls);
+		}
+
+		function getStringScore($string){
+			$score = 0;
+			$string = preg_replace('/[^a-zA-ZãÃáàâõóòôêéèíìúùç&;\- ]/s', ' ', $string);
+			$terms = explode(' ', $string);
+
+			$keyTerms = array_keys($this->weightTable->stemmedKeyWords);
+			foreach ($terms as $t) {
+				if(in_array(stem_portuguese($t), $keyTerms)){
+					$score += 1;
+				}
+			}
+
+			return $score;
+		}
+
+		function getRelevantReferenceScore($url){
+			$score=0;
+			foreach ($this->crawler->relevantPages as $rpData) {
+				if(in_array($url, $rpData['links'])){
+					$score +=1;
+				}
+			}
+			return $score;
+		}
+
+		function getPageUrls(){
+			return $this->pageUrls;
+		}
 
 	}
 ?>

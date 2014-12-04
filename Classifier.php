@@ -22,7 +22,7 @@
 		 * @param   array userSettings		 
 		 */
 
-		function Classifier(FocusedCrawler $crawler){
+		function Classifier(FocusedCrawler &$crawler){
 			$this->crawler = $crawler;
 		}
 
@@ -45,7 +45,7 @@
 
 			$a = $b = $c = 0;
 			foreach ($page->keyTermsWeights as $term => $w) {
-				$a += $w * $this->crawler->weightTable->keyWords[$term];
+				$a += $w * $this->crawler->weightTable->stemmedKeyWords[$term];
 				$b += $w * $w;
 			}
 			foreach ($this->crawler->weightTable->keyWords as $w) {

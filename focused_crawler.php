@@ -1,8 +1,9 @@
 <?php
 	include('crawler.php');
 	include('FocusedCrawler.php');
-	// phpinfo();
-	$topic = "Shows, eventos, lazer, festas na bahia";
+	 // phpinfo();die();
+	ini_set('memory_limit', '-1');
+	$topic = "Realidade Aumentada";
 	// echo stem_portuguese("apartamento");die();
 	$crawler = new FocusedCrawler($topic);
 
