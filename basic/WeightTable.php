@@ -69,22 +69,22 @@
 			foreach ($this->keyWords as $term => $weight) {
 				$this->keyWords[$term] = $this->keyWords[$term]/$maxWeight;
 			}
-			// debugPrint('Tabela original');
-			// debugPrint($this->keyWords);
+			debugPrint('Tabela original');
+			debugPrint($this->keyWords);
 
-			$this->expandKeyWords();
+			// $this->expandKeyWords();
 			// debugPrint('Tabela Extendida:<br>');
 			// debugPrint($this->extendedKeyWords);
 
 			$this->updateStemmedKeyWords();
-			// debugPrint('Tabela de Stemmed KeyWords:<br>');
-			// debugPrint($this->stemmedKeyWords);
+			debugPrint('Tabela de Stemmed KeyWords:<br>');
+			debugPrint($this->stemmedKeyWords);
 			
 		}
 
 		function updateStemmedKeyWords(){
 			$this->stemmedKeyWords = array();
-			foreach ($this->extendedKeyWords as $word => $weight) {
+			foreach ($this->keyWords as $word => $weight) {
 				$this->stemmedKeyWords[stem_portuguese($word)] = $weight;
 			}
 		}
@@ -99,7 +99,6 @@
 				
 				// $searchUrl =  'http://www.dicio.com.br/'.$sWord;
 				$searchUrl =  'http://www.sinonimos.com.br/'.$sWord;
-				
 				$page = file_get_html2($searchUrl);
 
 				if($page) {

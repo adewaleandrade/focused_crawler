@@ -18,10 +18,10 @@
 
 
 	class FocusedCrawler {
-		public $settings;
-		public $urls;
-		public $visitedUrls;
-		public $relevantPages;
+		var $settings;
+		var $urls;
+		var $visitedUrls;
+		var $relevantPages;
 		public $weightTable;
 		public $classifier;
 	
@@ -36,8 +36,8 @@
 				'topic' => '',
 				'userKeyWords' => array(),
 				'userBaseUrls' => array(),
-				'relevanceThreshold' => 0.4,
-				// 'subPageLimit' => 10,
+				'relevanceThreshold' => 0.3,
+				'subPageLimit' => 10,
 				'weightTableMaxSize' => 50,
 				'expandLimit'  => 500,
 				'maxFishingLevel' => 2,
@@ -54,7 +54,7 @@
 			$this->urls = $this->getBaseUrlByTopic();
 
 			//export Urls to CSV
-			$csvFile = fopen($this->settings['topic']."_seed_urls_A2.csv", 'w');
+			$csvFile = fopen($this->settings['topic']."_seed_urls_B2.csv", 'w');
 		    fputcsv($csvFile, ['urls']); //Header
 		    foreach ($this->urls as $url=>$info) {
 		    	fputcsv($csvFile, [$info['url']]);
@@ -66,12 +66,13 @@
 
 			$this->weightTable = new WeightTable($this); 
 			$this->classifier = new Classifier($this);
+			
+			// debugPrint($this->getRelevantPages());
+			$this->getRelevantPages();
 		}
 
 		function getBaseUrlByTopic(){
 			$googleResults = file_get_html2('www.google.com.br/search?q='.urlencode($this->settings['topic']));
-			// debugPrint('www.google.com.br/search?q='.urlencode($this->settings['topic']));
-			// debugPrint($googleResults);die();
 			$resultLinks = $googleResults->find('h3.r a');
 
 		    $results = array();
@@ -82,7 +83,7 @@
 		    	$url  = htmlentities(urldecode(str_replace('%25','%',$url)));
 		    	$results[]= ['url' => $url, 'level' => 0];
 		    }
-		    
+		   
 		    return $results;
 		}
 
@@ -93,12 +94,12 @@
 
 
 		function getRelevantPages(){
-			$csvFile = fopen($this->settings['topic']."_A2.csv", 'w');
+			$csvFile = fopen($this->settings['topic']."_B2.csv", 'w');
 		    fputcsv($csvFile, ['visitedPages', 'relevantPages', 'ratio']); //Header
 		    
 
 			while(!empty($this->urls) && (count($this->visitedUrls) < $this->settings['expandLimit'])){
-				
+				debugPrint('Visited Urls = '.count($this->visitedUrls));
 				$currentPage = $this->urls[0];
 				unset($this->urls[0]);
 				$this->urls = array_values($this->urls);
@@ -107,12 +108,13 @@
 				if($currentPage['level'] <= 2){
 					$baseUrl = getBaseUrl($currentPage['url']);
 
-				
+					// debugPrint('Relevance Threshold => '. $this->settings['relevanceThreshold']);
 					if(!in_array($currentPage['url'], $this->visitedUrls) && ($currentPage['url'] != '')){
 						
 						$page = new Document($currentPage['url'], $this, $this->weightTable, $currentPage['level']);
 						$relevance =  $this->classifier->calculatePageRelevance($page);
 
+						// debugPrint("Relevance => ".$relevance);
 						$isRelevant = false;
 						if($relevance >= $this->settings['relevanceThreshold']){	
 							$isRelevant = true;
@@ -122,6 +124,7 @@
 							//Pega os links dentro da página
 							// $this->relevantPages[$currentPage['url']]['links'] = array_keys($page->pageUrls);
 							$this->relevantPages[$currentPage['url']]['links'] = [];
+
 							// $page->getTermFrequencies();
 
 							//update the weight table on every 50 relevant pages
@@ -148,15 +151,17 @@
 							fputcsv($csvFile, [$vP, $rP, $ratio]);
 						}
 						
-						sleep(10); // Reduce strain on target server;
+						// debugPrint("Relevant Pages: <b>".$rP." Different Pages: <b> ".$rP."</b> / Visited : <b>".$vP."</b> / Ratio:".$ratio);
+						sleep(2);
+						// die();
 					}
 				}
 			}
 			fclose($csvFile);
 			arsort($this->relevantPages);
-			
+
 			//export Urls to CSV
-			$csvFile = fopen($this->settings['topic']."_urls_A2.csv", 'w');
+			$csvFile = fopen($this->settings['topic']."_urls_B2.csv", 'w');
 		    fputcsv($csvFile, ['urls', 'relevancia']); //Header
 		    foreach ($this->relevantPages as $url=>$info) {
 		    	fputcsv($csvFile, [$url, $info['relevance']]);

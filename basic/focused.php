@@ -8,6 +8,4 @@
 	$topic = "Automação residencial arduino";
 
 	$crawler = new FocusedCrawler($topic);
-	$crawler->getRelevantPages();
-
 ?>
